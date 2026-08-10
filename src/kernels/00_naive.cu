@@ -29,7 +29,7 @@ __global__ void sgemm_00_naive_kernel(int M, int N, int K, float alpha,
     int row = blockIdx.x * blockDim.x + threadIdx.x;
     int col = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (row >= M && col >= N) {
+    if (row >= M || col >= N) {
         return ;
     }
 
@@ -42,8 +42,8 @@ __global__ void sgemm_00_naive_kernel(int M, int N, int K, float alpha,
 }
 
 void run_sgemm_00_naive(int M, int N, int K, float alpha, const float* d_A, const float* d_B, float beta, float* d_C) {
-    dim3 block(32, 32);
-    dim3 grid((M + block.x - 1) / block.x, (N + block.y - 1) / block.y);
+    dim3 block(BLOCK_DIM, BLOCK_DIM);
+    dim3 grid(CEIL_DIV(M, BLOCK_DIM), CEIL_DIV(N, BLOCK_DIM));
 
     sgemm_00_naive_kernel<<<grid, block>>>(M, N, K, alpha, d_A, d_B, beta, d_C);
     CUDA_CHECK(cudaGetLastError());

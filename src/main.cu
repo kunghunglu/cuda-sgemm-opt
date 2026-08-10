@@ -46,12 +46,14 @@ int main(int argc, char** argv) {
 
     // Parse command line arguments
     for (int i = 1; i < argc; ++i) {
-        if (std::string(argv[i]) == "-m" && i + 1 < argc) M = std::atoi(argv[++i]);
-        else if (std::string(argv[i]) == "-n" && i + 1 < argc) N = std::atoi(argv[++i]);
-        else if (std::string(argv[i]) == "-k" && i + 1 < argc) K = std::atoi(argv[++i]);
-        else if (std::string(argv[i]) == "-w" && i + 1 < argc) warmup_iters = std::atoi(argv[++i]);
-        else if (std::string(argv[i]) == "-r" && i + 1 < argc) bench_iters = std::atoi(argv[++i]);
-        else if (std::string(argv[i]) == "--kernel" && i + 1 < argc) {
+        std::string arg = argv[i];
+
+        if (arg == "-m" && i + 1 < argc) M = std::atoi(argv[++i]);
+        else if (arg == "-n" && i + 1 < argc) N = std::atoi(argv[++i]);
+        else if (arg == "-k" && i + 1 < argc) K = std::atoi(argv[++i]);
+        else if (arg == "-w" && i + 1 < argc) warmup_iters = std::atoi(argv[++i]);
+        else if (arg == "-r" && i + 1 < argc) bench_iters = std::atoi(argv[++i]);
+        else if (arg == "--kernel" && i + 1 < argc) {
             std::string arg = argv[++i];
             std::stringstream ss(arg);
             std::string item;
@@ -61,8 +63,8 @@ int main(int argc, char** argv) {
                 }
             }
         }
-        else if (std::string(argv[i]) == "--skip-verify") skip_verify = true;
-        else if (std::string(argv[i]) == "-h" || std::string(argv[i]) == "--help") {
+        else if (arg == "--skip-verify") skip_verify = true;
+        else if (arg == "-h" || arg == "--help") {
             std::cout << "Usage: " << argv[0] << " [options]\n"
                       << "Options:\n"
                       << "  -m <int>          Matrix height M (default 2048)\n"
@@ -121,13 +123,13 @@ int main(int argc, char** argv) {
     std::vector<KernelInfo> kernels = {
         {0, "Kernel 0: Naive", run_sgemm_00_naive},
         {1, "Kernel 1: Global Memory Coalescing", run_sgemm_01_coalesced},
-        {2, "Kernel 2: Shared Memory Tiling", run_sgemm_02_shared_mem},
-        {3, "Kernel 3: 1D Thread Tiling", run_sgemm_03_1d_block_tiling},
-        {4, "Kernel 4: 2D Thread Tiling", run_sgemm_04_2d_block_tiling},
-        {5, "Kernel 5: Vectorized Access (float4)", run_sgemm_05_vectorized},
-        {6, "Kernel 6: Double Buffering", run_sgemm_06_double_buffering},
-        {7, "Kernel 7: Bank Conflict Free", run_sgemm_07_bank_conflict_free},
-        {8, "Kernel 8: Hierarchical Warp Tiling", run_sgemm_08_warp_tiling},
+       // {2, "Kernel 2: Shared Memory Tiling", run_sgemm_02_shared_mem},
+       // {3, "Kernel 3: 1D Thread Tiling", run_sgemm_03_1d_block_tiling},
+       // {4, "Kernel 4: 2D Thread Tiling", run_sgemm_04_2d_block_tiling},
+       // {5, "Kernel 5: Vectorized Access (float4)", run_sgemm_05_vectorized},
+       // {6, "Kernel 6: Double Buffering", run_sgemm_06_double_buffering},
+       // {7, "Kernel 7: Bank Conflict Free", run_sgemm_07_bank_conflict_free},
+       // {8, "Kernel 8: Hierarchical Warp Tiling", run_sgemm_08_warp_tiling},
        // {9, "Kernel 9: Tensor Cores (WMMA)", run_sgemm_09_tensor_core_wmma},
         {10, "Reference: cuBLAS", run_sgemm_cublas_wrapper}
     };
