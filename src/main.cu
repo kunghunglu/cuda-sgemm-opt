@@ -124,7 +124,7 @@ int main(int argc, char** argv) {
         {0, "Kernel 0: Naive", run_sgemm_00_naive},
         {1, "Kernel 1: Global Memory Coalescing", run_sgemm_01_coalesced},
         {2, "Kernel 2: Shared Memory Tiling", run_sgemm_02_shared_mem},
-       // {3, "Kernel 3: 1D Thread Tiling", run_sgemm_03_1d_block_tiling},
+        {3, "Kernel 3: 1D Thread Tiling", run_sgemm_03_1d_block_tiling},
        // {4, "Kernel 4: 2D Thread Tiling", run_sgemm_04_2d_block_tiling},
        // {5, "Kernel 5: Vectorized Access (float4)", run_sgemm_05_vectorized},
        // {6, "Kernel 6: Double Buffering", run_sgemm_06_double_buffering},
