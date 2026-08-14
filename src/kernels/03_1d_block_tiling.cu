@@ -98,7 +98,7 @@ __global__ void sgemm_03_1d_block_tiling_kernel(int M, int N, int K, float alpha
 
 void run_sgemm_03_1d_block_tiling(int M, int N, int K, float alpha, const float* d_A, const float* d_B, float beta, float* d_C) {
     dim3 block(BN_STEP3, BM_STEP3 / TM_STEP3); // (64, 8) = 512 threads
-    dim3 grid((N + BN_STEP3 - 1) / BN_STEP3, (M + BM_STEP3 - 1) / BM_STEP3);
+    dim3 grid(CEIL_DIV(N, BN_STEP3), CEIL_DIV(M, BM_STEP3));
 
     sgemm_03_1d_block_tiling_kernel<<<grid, block>>>(M, N, K, alpha, d_A, d_B, beta, d_C);
     CUDA_CHECK(cudaGetLastError());
