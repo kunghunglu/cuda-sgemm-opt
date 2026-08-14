@@ -41,12 +41,14 @@ __global__ void sgemm_04_2d_block_tiling_kernel(int M, int N, int K, float alpha
     int tid = threadIdx.y * blockDim.x + threadIdx.x; // 0..255 threads
 
     // Threads collaboratively load As (128x8 = 1024 floats -> 4 floats per thread)
-    // Each thread loads 4 consecutive columns in the same row of As.
+    // Each row is processed by 2(BK_STEP4 / 4) threads.
     // tid / 2 -> row (0..127), (tid % 2) * 4 -> column start (0 or 4).
-    int loadA_row = (tid * 4) / BK_STEP4;
-    int loadA_col_start = (tid * 4) % BK_STEP4;
+    int loadA_row = tid / (BK_STEP4 / 4);
+    int loadA_col_start = (tid % (BK_STEP4 / 4)) * 4;
 
     // Threads collaboratively load Bs (8x128 = 1024 floats -> 4 floats per thread)
+    // Each row is processed by 32(BN_STEP4 / 4) threads.
+    // tid / 32 -> row (0..7), (tid % 32) * -> colum start (0..124). 
     int loadB_row = tid / (BN_STEP4 / 4);
     int loadB_col_start = (tid % (BN_STEP4 / 4)) * 4;
 
