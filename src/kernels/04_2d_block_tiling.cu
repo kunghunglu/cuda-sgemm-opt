@@ -15,7 +15,7 @@
 
 #define BM_STEP4 128
 #define BN_STEP4 128
-#define BK_STEP4 8
+#define BK_STEP4 16
 #define TM_STEP4 8
 #define TN_STEP4 8
 
@@ -30,8 +30,8 @@ __global__ void sgemm_04_2d_block_tiling_kernel(int M, int N, int K, float alpha
     int threadRow = threadIdx.y; // 0..15
     int threadCol = threadIdx.x; // 0..15
 
-    __shared__ float As[BM_STEP4][BK_STEP4]; // 128 x 8
-    __shared__ float Bs[BK_STEP4][BN_STEP4]; // 8 x 128
+    __shared__ float As[BM_STEP4][BK_STEP4]; // 128 x 16
+    __shared__ float Bs[BK_STEP4][BN_STEP4]; // 16 x 128
 
     // Registers for 2D micro-tile accumulation
     float regC[TM_STEP4][TN_STEP4] = {0.0f};
@@ -40,43 +40,37 @@ __global__ void sgemm_04_2d_block_tiling_kernel(int M, int N, int K, float alpha
 
     int tid = threadIdx.y * blockDim.x + threadIdx.x; // 0..255 threads
 
-    // Threads collaboratively load As (128x8 = 1024 floats -> 4 floats per thread)
-    // Each row is processed by 2(BK_STEP4 / 4) threads.
-    // tid / 2 -> row (0..127), (tid % 2) * 4 -> column start (0 or 4).
-    int loadA_row = tid / (BK_STEP4 / 4);
+    // Threads collaboratively load As (128x16 = 2048 floats -> 8 floats per thread)
+    int loadA_row0 = tid / (BK_STEP4 / 4);
+    int loadA_row1 = loadA_row0 + 64;
     int loadA_col_start = (tid % (BK_STEP4 / 4)) * 4;
 
-    // Threads collaboratively load Bs (8x128 = 1024 floats -> 4 floats per thread)
-    // Each row is processed by 32(BN_STEP4 / 4) threads.
-    // tid / 32 -> row (0..7), (tid % 32) * -> colum start (0..124). 
-    int loadB_row = tid / (BN_STEP4 / 4);
+    // Threads collaboratively load Bs (16x128 = 2048 floats -> 8 floats per thread)
+    int loadB_row0 = tid / (BN_STEP4 / 4);
+    int loadB_row1 = loadB_row0 + 8;
     int loadB_col_start = (tid % (BN_STEP4 / 4)) * 4;
 
     for (int bk = 0; bk < K; bk += BK_STEP4) {
-        // Load tile from A into shared memory
+        // Load tile from A into shared memory (2 chunks of 4 floats)
         #pragma unroll
         for (int i = 0; i < 4; ++i) {
             int cur_loadA_col = loadA_col_start + i;
-            int gRowA = blockRow * BM_STEP4 + loadA_row;
+            int gRowA0 = blockRow * BM_STEP4 + loadA_row0;
+            int gRowA1 = blockRow * BM_STEP4 + loadA_row1;
             int gColA = bk + cur_loadA_col;
-            if (gRowA < M && gColA < K) {
-                As[loadA_row][cur_loadA_col] = A[gRowA * K + gColA];
-            } else {
-                As[loadA_row][cur_loadA_col] = 0.0f;
-            }
+            As[loadA_row0][cur_loadA_col] = (gRowA0 < M && gColA < K) ? A[gRowA0 * K + gColA] : 0.0f;
+            As[loadA_row1][cur_loadA_col] = (gRowA1 < M && gColA < K) ? A[gRowA1 * K + gColA] : 0.0f;
         }
 
-        // Load tile from B into shared memory
+        // Load tile from B into shared memory (2 chunks of 4 floats)
         #pragma unroll
         for (int i = 0; i < 4; ++i) {
             int cur_loadB_col = loadB_col_start + i;
-            int gRowB = bk + loadB_row;
+            int gRowB0 = bk + loadB_row0;
+            int gRowB1 = bk + loadB_row1;
             int gColB = blockCol * BN_STEP4 + cur_loadB_col;
-            if (gRowB < K && gColB < N) {
-                Bs[loadB_row][cur_loadB_col] = B[gRowB * N + gColB];
-            } else {
-                Bs[loadB_row][cur_loadB_col] = 0.0f;
-            }
+            Bs[loadB_row0][cur_loadB_col] = (gRowB0 < K && gColB < N) ? B[gRowB0 * N + gColB] : 0.0f;
+            Bs[loadB_row1][cur_loadB_col] = (gRowB1 < K && gColB < N) ? B[gRowB1 * N + gColB] : 0.0f;
         }
 
         __syncthreads();

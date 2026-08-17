@@ -13,17 +13,9 @@
 
 #define BM_STEP5 128
 #define BN_STEP5 128
-#define BK_STEP5 8
+#define BK_STEP5 16
 #define TM_STEP5 8
 #define TN_STEP5 8
-
-__device__ inline float4 operator*(float a, float4 b) {
-    return make_float4(a * b.x, a * b.y, a * b.z, a * b.w);
-}
-
-__device__ inline float4 operator+(float4 a, float4 b) {
-    return make_float4(a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w);
-}
 
 __global__ void sgemm_05_vectorized_kernel(int M, int N, int K, float alpha,
                                            const float* __restrict__ A,
@@ -36,8 +28,8 @@ __global__ void sgemm_05_vectorized_kernel(int M, int N, int K, float alpha,
     int threadRow = threadIdx.y; // 0..15
     int threadCol = threadIdx.x; // 0..15
 
-    __shared__ float As[BM_STEP5][BK_STEP5]; // 128 x 8
-    __shared__ float Bs[BK_STEP5][BN_STEP5]; // 8 x 128
+    __shared__ float As[BM_STEP5][BK_STEP5]; // 128 x 16
+    __shared__ float Bs[BK_STEP5][BN_STEP5]; // 16 x 128
 
     float regC[TM_STEP5][TN_STEP5] = {0.0f};
     float regA[TM_STEP5];
@@ -45,26 +37,30 @@ __global__ void sgemm_05_vectorized_kernel(int M, int N, int K, float alpha,
 
     int tid = threadIdx.y * blockDim.x + threadIdx.x; // 0..255
 
-    // A tile loading: 128x8 = 1024 floats = 256 float4s -> 1 float4 per thread
-    // Thread tid loads row = tid / 2, col = (tid % 2) * 4
-    int loadA_row = tid / (BK_STEP5 / 4);
+    // A tile loading: 128x16 = 2048 floats = 512 float4s -> 2 float4 per thread
+    int loadA_row0 = tid / (BK_STEP5 / 4);
+    int loadA_row1 = loadA_row0 + 64;
     int loadA_col = (tid % (BK_STEP5 / 4)) * 4;
 
-    // B tile loading: 8x128 = 1024 floats = 256 float4s -> 1 float4 per thread
-    // Thread tid loads row = tid / 32, col = (tid % 32) * 4
-    int loadB_row = tid / (BN_STEP5 / 4);
+    // B tile loading: 16x128 = 2048 floats = 512 float4s -> 2 float4 per thread
+    int loadB_row0 = tid / (BN_STEP5 / 4);
+    int loadB_row1 = loadB_row0 + 8;
     int loadB_col = (tid % (BN_STEP5 / 4)) * 4;
 
     for (int bk = 0; bk < K; bk += BK_STEP5) {
         // Vectorized load float4 from A
-        int gRowA = blockRow * BM_STEP5 + loadA_row;
+        int gRowA0 = blockRow * BM_STEP5 + loadA_row0;
+        int gRowA1 = blockRow * BM_STEP5 + loadA_row1;
         int gColA = bk + loadA_col;
-        *reinterpret_cast<float4*>(&As[loadA_row][loadA_col]) = *reinterpret_cast<const float4*>(&A[gRowA * K + gColA]);
+        *reinterpret_cast<float4*>(&As[loadA_row0][loadA_col]) = *reinterpret_cast<const float4*>(&A[gRowA0 * K + gColA]);
+        *reinterpret_cast<float4*>(&As[loadA_row1][loadA_col]) = *reinterpret_cast<const float4*>(&A[gRowA1 * K + gColA]);
 
         // Vectorized load float4 from B
-        int gRowB = bk + loadB_row;
+        int gRowB0 = bk + loadB_row0;
+        int gRowB1 = bk + loadB_row1;
         int gColB = blockCol * BN_STEP5 + loadB_col;
-        *reinterpret_cast<float4*>(&Bs[loadB_row][loadB_col]) = *reinterpret_cast<const float4*>(&B[gRowB * N + gColB]);
+        *reinterpret_cast<float4*>(&Bs[loadB_row0][loadB_col]) = *reinterpret_cast<const float4*>(&B[gRowB0 * N + gColB]);
+        *reinterpret_cast<float4*>(&Bs[loadB_row1][loadB_col]) = *reinterpret_cast<const float4*>(&B[gRowB1 * N + gColB]);
 
         __syncthreads();
 

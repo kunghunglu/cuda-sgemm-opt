@@ -27,8 +27,8 @@ void run_sgemm_04_2d_block_tiling(int M, int N, int K, float alpha, const float*
 // Step 5: Vectorized Memory Access (float4 loads/stores)
 void run_sgemm_05_vectorized(int M, int N, int K, float alpha, const float* d_A, const float* d_B, float beta, float* d_C);
 
-// Step 6: Double Buffering / Software Pipelining
-void run_sgemm_06_double_buffering(int M, int N, int K, float alpha, const float* d_A, const float* d_B, float beta, float* d_C);
+// Step 6: Shared Memory Double Buffering / Software Pipelining
+void run_sgemm_06_smem_double_buffering(int M, int N, int K, float alpha, const float* d_A, const float* d_B, float beta, float* d_C);
 
 // Step 7: Shared Memory Bank Conflict Free Layout
 void run_sgemm_07_bank_conflict_free(int M, int N, int K, float alpha, const float* d_A, const float* d_B, float beta, float* d_C);

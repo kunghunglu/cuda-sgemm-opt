@@ -38,4 +38,13 @@ void cpu_sgemm(const float* A, const float* B, float* C, int M, int N, int K, fl
 bool verify_matrix(const float* refC, const float* testC, int M, int N, float tolerance = 1e-2f);
 float calc_max_abs_error(const float* refC, const float* testC, int M, int N);
 
+// Vector math helpers for float4
+__device__ inline float4 operator*(float a, float4 b) {
+    return make_float4(a * b.x, a * b.y, a * b.z, a * b.w);
+}
+
+__device__ inline float4 operator+(float4 a, float4 b) {
+    return make_float4(a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w);
+}
+
 #endif // UTILS_H
