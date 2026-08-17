@@ -30,8 +30,8 @@ void run_sgemm_05_vectorized(int M, int N, int K, float alpha, const float* d_A,
 // Step 6: Shared Memory Double Buffering / Software Pipelining
 void run_sgemm_06_smem_double_buffering(int M, int N, int K, float alpha, const float* d_A, const float* d_B, float beta, float* d_C);
 
-// Step 7: Shared Memory Bank Conflict Free Layout
-void run_sgemm_07_bank_conflict_free(int M, int N, int K, float alpha, const float* d_A, const float* d_B, float beta, float* d_C);
+// Step 7: Register-Level Double Buffering (2-Level Software Pipelining)
+void run_sgemm_07_reg_double_buffering(int M, int N, int K, float alpha, const float* d_A, const float* d_B, float beta, float* d_C);
 
 // Step 8: Hierarchical Warp Tiling (Block -> Warp -> Thread)
 void run_sgemm_08_warp_tiling(int M, int N, int K, float alpha, const float* d_A, const float* d_B, float beta, float* d_C);

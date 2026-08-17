@@ -71,10 +71,9 @@ __global__ void sgemm_05_vectorized_kernel(int M, int N, int K, float alpha,
             for (int m = 0; m < TM_STEP5; ++m) {
                 regA[m] = As[threadRow * TM_STEP5 + m][k];
             }
-            #pragma unroll
-            for (int n = 0; n < TN_STEP5; ++n) {
-                regB[n] = Bs[k][threadCol * TN_STEP5 + n];
-            }
+            // Vectorized LDS.128: Load 8 contiguous floats of B from Shared Memory
+            *reinterpret_cast<float4*>(&regB[0]) = *reinterpret_cast<const float4*>(&Bs[k][threadCol * TN_STEP5 + 0]);
+            *reinterpret_cast<float4*>(&regB[4]) = *reinterpret_cast<const float4*>(&Bs[k][threadCol * TN_STEP5 + 4]);
             #pragma unroll
             for (int m = 0; m < TM_STEP5; ++m) {
                 #pragma unroll

@@ -100,10 +100,10 @@ __global__ void sgemm_06_smem_double_buffering_kernel(int M, int N, int K, float
             for (int m = 0; m < TM_STEP6; ++m) {
                 regA[m] = As[read_idx][threadRow * TM_STEP6 + m][k];
             }
-            #pragma unroll
-            for (int n = 0; n < TN_STEP6; ++n) {
-                regB[n] = Bs[read_idx][k][threadCol * TN_STEP6 + n];
-            }
+            // Vectorized LDS.128: Load 8 contiguous floats of B from Shared Memory
+            *reinterpret_cast<float4*>(&regB[0]) = *reinterpret_cast<const float4*>(&Bs[read_idx][k][threadCol * TN_STEP6 + 0]);
+            *reinterpret_cast<float4*>(&regB[4]) = *reinterpret_cast<const float4*>(&Bs[read_idx][k][threadCol * TN_STEP6 + 4]);
+
             #pragma unroll
             for (int m = 0; m < TM_STEP6; ++m) {
                 #pragma unroll
@@ -133,10 +133,10 @@ __global__ void sgemm_06_smem_double_buffering_kernel(int M, int N, int K, float
         for (int m = 0; m < TM_STEP6; ++m) {
             regA[m] = As[read_idx][threadRow * TM_STEP6 + m][k];
         }
-        #pragma unroll
-        for (int n = 0; n < TN_STEP6; ++n) {
-            regB[n] = Bs[read_idx][k][threadCol * TN_STEP6 + n];
-        }
+        // Vectorized LDS.128: Load 8 contiguous floats of B from Shared Memory
+        *reinterpret_cast<float4*>(&regB[0]) = *reinterpret_cast<const float4*>(&Bs[read_idx][k][threadCol * TN_STEP6 + 0]);
+        *reinterpret_cast<float4*>(&regB[4]) = *reinterpret_cast<const float4*>(&Bs[read_idx][k][threadCol * TN_STEP6 + 4]);
+
         #pragma unroll
         for (int m = 0; m < TM_STEP6; ++m) {
             #pragma unroll
