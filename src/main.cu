@@ -72,7 +72,7 @@ int main(int argc, char** argv) {
                       << "  -k <int>          Matrix depth K (default 2048)\n"
                       << "  -w <int>          Warmup iterations (default 5)\n"
                       << "  -r <int>          Benchmark iterations (default 20)\n"
-                      << "  --kernel <id(s)>  Target kernel index or comma-separated indices (0-8, 10=cuBLAS, default all)\n"
+                      << "  --kernel <id(s)>  Target kernel index or comma-separated indices (0-7, 10=cuBLAS, default all)\n"
                       << "  --skip-verify     Skip numerical verification against reference\n";
             return 0;
         }
@@ -128,7 +128,7 @@ int main(int argc, char** argv) {
         {4, "Kernel 4: 2D Thread Tiling", run_sgemm_04_2d_block_tiling},
         {5, "Kernel 5: Vectorized Access (float4)", run_sgemm_05_vectorized},
         {6, "Kernel 6: SMEM Double Buffering", run_sgemm_06_smem_double_buffering},
-        {7, "Kernel 7: Reg Double Buffering", run_sgemm_07_reg_double_buffering},
+        {7, "Kernel 7: Bank Conflict Free", run_sgemm_07_bank_conflict_free},
        // {8, "Kernel 8: Hierarchical Warp Tiling", run_sgemm_08_warp_tiling},
        // {9, "Kernel 9: Tensor Cores (WMMA)", run_sgemm_09_tensor_core_wmma},
         {10, "Reference: cuBLAS", run_sgemm_cublas_wrapper}
