@@ -129,7 +129,7 @@ int main(int argc, char** argv) {
         {5, "Kernel 5: Vectorized Access (float4)", run_sgemm_05_vectorized},
         {6, "Kernel 6: SMEM Double Buffering", run_sgemm_06_smem_double_buffering},
         {7, "Kernel 7: Bank Conflict Free", run_sgemm_07_bank_conflict_free},
-       // {8, "Kernel 8: Hierarchical Warp Tiling", run_sgemm_08_warp_tiling},
+        {8, "Kernel 8: Hierarchical Warp Tiling", run_sgemm_08_warp_tiling},
        // {9, "Kernel 9: Tensor Cores (WMMA)", run_sgemm_09_tensor_core_wmma},
         {10, "Reference: cuBLAS", run_sgemm_cublas_wrapper}
     };
