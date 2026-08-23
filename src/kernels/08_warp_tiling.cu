@@ -49,20 +49,20 @@ __global__ void sgemm_08_warp_tiling_kernel(int M, int N, int K, float alpha,
     int blockRow = blockIdx.y;
     int blockCol = blockIdx.x;
 
-    int lane_id = threadIdx.x;          // 0..31 (lane in warp)
-    int warp_id = threadIdx.y;          // 0..7  (warp index in block)
-    int tid = (warp_id << 5) | lane_id; // 0..255
+    uint32_t lane_id = threadIdx.x;          // 0..31 (lane in warp)
+    uint32_t warp_id = threadIdx.y;          // 0..7  (warp index in block)
+    uint32_t tid = (warp_id * 32) + lane_id; // 0..255
 
     // Warp hierarchy decomposition
-    int warp_row = warp_id >> 1; // warp_id / 2: 0..3
-    int warp_col = warp_id & 1;  // warp_id % 2: 0..1
+    uint32_t warp_row = warp_id / WARPS_N_STEP8; // 0..3
+    uint32_t warp_col = warp_id % WARPS_N_STEP8; // 0..1
 
-    int lane_row = lane_id >> 3; // lane_id / 8: 0..3
-    int lane_col = lane_id & 7;  // lane_id % 8: 0..7
+    uint32_t lane_row = lane_id / THREADS_PER_WARP_N_STEP8; // 0..3
+    uint32_t lane_col = lane_id % THREADS_PER_WARP_N_STEP8; // 0..7
 
     // Offset of this thread's 8x8 micro-tile within the 128x128 block tile
-    int thread_m_offset = (warp_row << 5) | (lane_row << 3); // warp_row * 32 + lane_row * 8
-    int thread_n_offset = (warp_col << 6) | (lane_col << 3); // warp_col * 64 + lane_col * 8
+    uint32_t thread_m_offset = warp_row * WM_STEP8 + lane_row * TM_STEP8; // warp_row * 32 + lane_row * 8
+    uint32_t thread_n_offset = warp_col * WN_STEP8 + lane_col * TN_STEP8; // warp_col * 64 + lane_col * 8
 
     // Shared memory double buffers:
     // As[2][BK][BM + PAD_A] -> As is stored transposed: As[k][m]
@@ -82,13 +82,20 @@ __global__ void sgemm_08_warp_tiling_kernel(int M, int N, int K, float alpha,
     float4 prefetchB[2];
 
     // Global memory tile loading mapping (256 threads load 2048 floats = 512 float4s -> 2 float4 per thread)
-    int loadA_row0 = tid >> 2;                  // tid / 4: 0..63
-    int loadA_row1 = loadA_row0 + 64;           // 64..127
-    int loadA_col  = (tid & 3) << 2;            // (tid % 4) * 4: 0, 4, 8, 12
+    constexpr uint32_t VEC_SIZE = 4;
+    constexpr uint32_t THREADS_K_A = BK_STEP8 / VEC_SIZE; // 16 / 4 = 4 threads per row of A
+    constexpr uint32_t ROWS_PER_LOAD_A = 256 / THREADS_K_A; // 64 rows per pass
 
-    int loadB_row0 = tid >> 5;                  // tid / 32: 0..7
-    int loadB_row1 = loadB_row0 + 8;            // 8..15
-    int loadB_col  = (tid & 31) << 2;           // (tid % 32) * 4: 0, 4, ..., 124
+    uint32_t loadA_row0 = tid / THREADS_K_A;
+    uint32_t loadA_row1 = loadA_row0 + ROWS_PER_LOAD_A;
+    uint32_t loadA_col  = (tid % THREADS_K_A) * VEC_SIZE;
+
+    constexpr uint32_t THREADS_N_B = BN_STEP8 / VEC_SIZE; // 128 / 4 = 32 threads per row of B
+    constexpr uint32_t ROWS_PER_LOAD_B = 256 / THREADS_N_B; // 8 rows per pass
+
+    uint32_t loadB_row0 = tid / THREADS_N_B;
+    uint32_t loadB_row1 = loadB_row0 + ROWS_PER_LOAD_B;
+    uint32_t loadB_col  = (tid % THREADS_N_B) * VEC_SIZE;
 
     // Helper lambdas for fetching from global memory (LDG.128)
     auto fetch_A = [&](int bk, float4 val[2]) {
