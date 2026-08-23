@@ -25,10 +25,10 @@ __global__ void sgemm_01_coalesced_kernel(int M, int N, int K, float alpha,
                                           float* __restrict__ C) {
     // threadIdx.x maps to contiguous columns (N)
     // threadIdx.y maps to rows (M)
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    uint32_t col = blockIdx.x * blockDim.x + threadIdx.x;
+    uint32_t row = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (row >= M || col >= N) {
+    if (row >= static_cast<uint32_t>(M) || col >= static_cast<uint32_t>(N)) {
         return;
     }
 

@@ -1,14 +1,36 @@
 #ifndef UTILS_H
 #define UTILS_H
 
+#include <cstdint>
 #include <cstdlib>
 #include <cstdio>
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
 
-// Common helper macros for kernel execution configuration
+// =============================================================================
+// 1. GPU Architecture & Vectorization Constants
+// =============================================================================
+constexpr uint32_t WARP_SIZE = 32;
+constexpr uint32_t SMEM_BANKS = 32;
+constexpr uint32_t BANK_WIDTH_BYTES = 4;
+
+// 128-bit Vectorization (float4)
+constexpr uint32_t VEC_SIZE = 4;
+constexpr uint32_t VEC_BYTES = sizeof(float) * VEC_SIZE; // 16 bytes
+
+// Default Block Dimensions for basic kernels (Step 0 - Step 2)
+constexpr uint32_t DEFAULT_BLOCK_DIM = 16;
+constexpr uint32_t BLOCK_DIM = 16;
+
+// =============================================================================
+// 2. Kernel Launch & Math Helpers
+// =============================================================================
 #define CEIL_DIV(M, N) (((M) + (N)-1) / (N))
-#define BLOCK_DIM 16
+
+template <typename T>
+__host__ __device__ constexpr T ceil_div(T m, T n) {
+    return (m + n - 1) / n;
+}
 
 // Inline function for CUDA/CUBLAS error validation logic (CUDA sample style)
 inline void cuda_check(cudaError_t result, const char* file, int line) {

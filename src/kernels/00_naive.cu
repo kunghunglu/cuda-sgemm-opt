@@ -26,11 +26,11 @@ __global__ void sgemm_00_naive_kernel(int M, int N, int K, float alpha,
     // NON-COALESCED: threadIdx.x maps to rows, threadIdx.y maps to columns.
     // Consecutive threads in a warp (varying threadIdx.x) access different rows of B and C,
     // causing strided memory accesses that cannot be merged into 128-byte transactions.
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    int col = blockIdx.y * blockDim.y + threadIdx.y;
+    uint32_t row = blockIdx.x * blockDim.x + threadIdx.x;
+    uint32_t col = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (row >= M || col >= N) {
-        return ;
+    if (row >= static_cast<uint32_t>(M) || col >= static_cast<uint32_t>(N)) {
+        return;
     }
 
     float sum = 0.0f;

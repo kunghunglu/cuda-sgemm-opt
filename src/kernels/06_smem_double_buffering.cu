@@ -11,30 +11,48 @@
  * - Hides global memory fetch latency behind arithmetic computation.
  */
 
-#define BM_STEP6 128
-#define BN_STEP6 128
-#define BK_STEP6 16
-#define TM_STEP6 8
-#define TN_STEP6 8
+namespace {
+    constexpr uint32_t BM = 128;
+    constexpr uint32_t BN = 128;
+    constexpr uint32_t BK = 16;
+    constexpr uint32_t TM = 8;
+    constexpr uint32_t TN = 8;
+
+    constexpr uint32_t THREADS_X = BN / TN; // 16
+    constexpr uint32_t THREADS_Y = BM / TM; // 16
+    constexpr uint32_t TOTAL_THREADS = THREADS_X * THREADS_Y; // 256
+
+    constexpr uint32_t THREADS_K_A = BK / VEC_SIZE; // 16 / 4 = 4
+    constexpr uint32_t ROWS_PER_LOAD_A = TOTAL_THREADS / THREADS_K_A; // 64
+
+    constexpr uint32_t THREADS_N_B = BN / VEC_SIZE; // 128 / 4 = 32
+    constexpr uint32_t ROWS_PER_LOAD_B = TOTAL_THREADS / THREADS_N_B; // 8
+
+    static_assert(BM % TM == 0, "BM must be divisible by TM");
+    static_assert(BN % TN == 0, "BN must be divisible by TN");
+    static_assert(BK % VEC_SIZE == 0, "BK must be a multiple of VEC_SIZE");
+    static_assert(BN % VEC_SIZE == 0, "BN must be a multiple of VEC_SIZE");
+    static_assert(TN % VEC_SIZE == 0, "TN must be a multiple of VEC_SIZE");
+}
 
 __global__ void sgemm_06_smem_double_buffering_kernel(int M, int N, int K, float alpha,
-                                                 const float* __restrict__ A,
-                                                 const float* __restrict__ B,
-                                                 float beta,
-                                                 float* __restrict__ C) {
-    int blockRow = blockIdx.y;
-    int blockCol = blockIdx.x;
+                                                     const float* __restrict__ A,
+                                                     const float* __restrict__ B,
+                                                     float beta,
+                                                     float* __restrict__ C) {
+    uint32_t blockRow = blockIdx.y;
+    uint32_t blockCol = blockIdx.x;
 
-    int threadRow = threadIdx.y; // 0..15
-    int threadCol = threadIdx.x; // 0..15
+    uint32_t threadRow = threadIdx.y; // 0..15
+    uint32_t threadCol = threadIdx.x; // 0..15
 
     // Double buffers in shared memory
-    __shared__ float As[2][BM_STEP6][BK_STEP6]; // 2 x 128 x 16 = 16 KB
-    __shared__ float Bs[2][BK_STEP6][BN_STEP6]; // 2 x 16 x 128 = 16 KB
+    __shared__ float As[2][BM][BK]; // 2 x 128 x 16 = 16 KB
+    __shared__ float Bs[2][BK][BN]; // 2 x 16 x 128 = 16 KB
 
-    float regC[TM_STEP6][TN_STEP6] = {0.0f};
-    float regA[TM_STEP6];
-    float regB[TN_STEP6];
+    float regC[TM][TN] = {0.0f};
+    float regA[TM];
+    float regB[TN];
 
     // Staging registers for double buffering / latency hiding:
     // 1. GMEM -> SMEM uses registers implicitly (pre-Ampere has no direct GMEM->SMEM instruction; LDG loads to registers first).
@@ -44,22 +62,22 @@ __global__ void sgemm_06_smem_double_buffering_kernel(int M, int N, int K, float
     float4 prefetchA[2];
     float4 prefetchB[2];
 
-    int tid = threadIdx.y * blockDim.x + threadIdx.x; // 0..255
+    uint32_t tid = threadIdx.y * blockDim.x + threadIdx.x; // 0..255
 
     // A tile loading: 128x16 = 2048 floats = 512 float4s -> 2 float4 per thread
-    int loadA_row0 = tid / (BK_STEP6 / 4); // tid / 4: 0..63
-    int loadA_row1 = loadA_row0 + 64;      // 64..127
-    int loadA_col = (tid % (BK_STEP6 / 4)) * 4; // 0, 4, 8, 12
+    uint32_t loadA_row0 = tid / THREADS_K_A; // tid / 4: 0..63
+    uint32_t loadA_row1 = loadA_row0 + ROWS_PER_LOAD_A; // 64..127
+    uint32_t loadA_col  = (tid % THREADS_K_A) * VEC_SIZE; // 0, 4, 8, 12
 
     // B tile loading: 16x128 = 2048 floats = 512 float4s -> 2 float4 per thread
-    int loadB_row0 = tid / (BN_STEP6 / 4); // tid / 32: 0..7
-    int loadB_row1 = loadB_row0 + 8;       // 8..15
-    int loadB_col = (tid % (BN_STEP6 / 4)) * 4; // 0, 4, 8, ..., 124
+    uint32_t loadB_row0 = tid / THREADS_N_B; // tid / 32: 0..7
+    uint32_t loadB_row1 = loadB_row0 + ROWS_PER_LOAD_B; // 8..15
+    uint32_t loadB_col  = (tid % THREADS_N_B) * VEC_SIZE; // 0, 4, 8, ..., 124
 
     // Helper lambdas for fetching from global memory
     auto fetch_A = [&](int bk, float4 val[2]) {
-        int gRowA0 = blockRow * BM_STEP6 + loadA_row0;
-        int gRowA1 = blockRow * BM_STEP6 + loadA_row1;
+        uint32_t gRowA0 = blockRow * BM + loadA_row0;
+        uint32_t gRowA1 = blockRow * BM + loadA_row1;
         int gColA = bk + loadA_col;
         val[0] = *reinterpret_cast<const float4*>(&A[gRowA0 * K + gColA]);
         val[1] = *reinterpret_cast<const float4*>(&A[gRowA1 * K + gColA]);
@@ -68,7 +86,7 @@ __global__ void sgemm_06_smem_double_buffering_kernel(int M, int N, int K, float
     auto fetch_B = [&](int bk, float4 val[2]) {
         int gRowB0 = bk + loadB_row0;
         int gRowB1 = bk + loadB_row1;
-        int gColB = blockCol * BN_STEP6 + loadB_col;
+        uint32_t gColB = blockCol * BN + loadB_col;
         val[0] = *reinterpret_cast<const float4*>(&B[gRowB0 * N + gColB]);
         val[1] = *reinterpret_cast<const float4*>(&B[gRowB1 * N + gColB]);
     };
@@ -88,26 +106,26 @@ __global__ void sgemm_06_smem_double_buffering_kernel(int M, int N, int K, float
     int read_idx = 0;
 
     // Main loop: Pipelined execution
-    for (int bk = BK_STEP6; bk < K; bk += BK_STEP6) {
+    for (int bk = BK; bk < K; bk += BK) {
         // Prefetch next tile from global memory into registers
         fetch_A(bk, prefetchA);
         fetch_B(bk, prefetchB);
 
         // Compute on current read_idx shared memory buffer
         #pragma unroll
-        for (int k = 0; k < BK_STEP6; ++k) {
+        for (uint32_t k = 0; k < BK; ++k) {
             #pragma unroll
-            for (int m = 0; m < TM_STEP6; ++m) {
-                regA[m] = As[read_idx][threadRow * TM_STEP6 + m][k];
+            for (uint32_t m = 0; m < TM; ++m) {
+                regA[m] = As[read_idx][threadRow * TM + m][k];
             }
             // Vectorized LDS.128: Load 8 contiguous floats of B from Shared Memory
-            *reinterpret_cast<float4*>(&regB[0]) = *reinterpret_cast<const float4*>(&Bs[read_idx][k][threadCol * TN_STEP6 + 0]);
-            *reinterpret_cast<float4*>(&regB[4]) = *reinterpret_cast<const float4*>(&Bs[read_idx][k][threadCol * TN_STEP6 + 4]);
+            *reinterpret_cast<float4*>(&regB[0]) = *reinterpret_cast<const float4*>(&Bs[read_idx][k][threadCol * TN + 0]);
+            *reinterpret_cast<float4*>(&regB[4]) = *reinterpret_cast<const float4*>(&Bs[read_idx][k][threadCol * TN + 4]);
 
             #pragma unroll
-            for (int m = 0; m < TM_STEP6; ++m) {
+            for (uint32_t m = 0; m < TM; ++m) {
                 #pragma unroll
-                for (int n = 0; n < TN_STEP6; ++n) {
+                for (uint32_t n = 0; n < TN; ++n) {
                     regC[m][n] += regA[m] * regB[n];
                 }
             }
@@ -128,19 +146,19 @@ __global__ void sgemm_06_smem_double_buffering_kernel(int M, int N, int K, float
 
     // Epilogue: Compute on final tile remaining in read_idx buffer
     #pragma unroll
-    for (int k = 0; k < BK_STEP6; ++k) {
+    for (uint32_t k = 0; k < BK; ++k) {
         #pragma unroll
-        for (int m = 0; m < TM_STEP6; ++m) {
-            regA[m] = As[read_idx][threadRow * TM_STEP6 + m][k];
+        for (uint32_t m = 0; m < TM; ++m) {
+            regA[m] = As[read_idx][threadRow * TM + m][k];
         }
         // Vectorized LDS.128: Load 8 contiguous floats of B from Shared Memory
-        *reinterpret_cast<float4*>(&regB[0]) = *reinterpret_cast<const float4*>(&Bs[read_idx][k][threadCol * TN_STEP6 + 0]);
-        *reinterpret_cast<float4*>(&regB[4]) = *reinterpret_cast<const float4*>(&Bs[read_idx][k][threadCol * TN_STEP6 + 4]);
+        *reinterpret_cast<float4*>(&regB[0]) = *reinterpret_cast<const float4*>(&Bs[read_idx][k][threadCol * TN + 0]);
+        *reinterpret_cast<float4*>(&regB[4]) = *reinterpret_cast<const float4*>(&Bs[read_idx][k][threadCol * TN + 4]);
 
         #pragma unroll
-        for (int m = 0; m < TM_STEP6; ++m) {
+        for (uint32_t m = 0; m < TM; ++m) {
             #pragma unroll
-            for (int n = 0; n < TN_STEP6; ++n) {
+            for (uint32_t n = 0; n < TN; ++n) {
                 regC[m][n] += regA[m] * regB[n];
             }
         }
@@ -148,12 +166,12 @@ __global__ void sgemm_06_smem_double_buffering_kernel(int M, int N, int K, float
 
     // Write back results
     #pragma unroll
-    for (int m = 0; m < TM_STEP6; ++m) {
-        int r = blockRow * BM_STEP6 + threadRow * TM_STEP6 + m;
+    for (uint32_t m = 0; m < TM; ++m) {
+        uint32_t r = blockRow * BM + threadRow * TM + m;
 
         #pragma unroll
-        for (int n = 0; n < TN_STEP6; n += 4) {
-            int c = blockCol * BN_STEP6 + threadCol * TN_STEP6 + n;
+        for (uint32_t n = 0; n < TN; n += 4) {
+            uint32_t c = blockCol * BN + threadCol * TN + n;
             float4 oldC = *reinterpret_cast<const float4*>(&C[r * N + c]);
             float4 c_reg = *reinterpret_cast<const float4*>(&regC[m][n]);
             *reinterpret_cast<float4*>(&C[r * N + c]) = alpha * c_reg + beta * oldC;
@@ -162,8 +180,8 @@ __global__ void sgemm_06_smem_double_buffering_kernel(int M, int N, int K, float
 }
 
 void run_sgemm_06_smem_double_buffering(int M, int N, int K, float alpha, const float* d_A, const float* d_B, float beta, float* d_C) {
-    dim3 block(BN_STEP6 / TN_STEP6, BM_STEP6 / TM_STEP6); // (16, 16)
-    dim3 grid(CEIL_DIV(N, BN_STEP6), CEIL_DIV(M, BM_STEP6));
+    dim3 block(THREADS_X, THREADS_Y); // (16, 16)
+    dim3 grid(CEIL_DIV(N, BN), CEIL_DIV(M, BM));
 
     sgemm_06_smem_double_buffering_kernel<<<grid, block>>>(M, N, K, alpha, d_A, d_B, beta, d_C);
     CUDA_CHECK(cudaGetLastError());

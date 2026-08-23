@@ -20,33 +20,33 @@ __global__ void sgemm_02_shared_mem_kernel(int M, int N, int K, float alpha,
     __shared__ float As[BLOCK_DIM][BLOCK_DIM];
     __shared__ float Bs[BLOCK_DIM][BLOCK_DIM];
 
-    int row = blockIdx.y * BLOCK_DIM + threadIdx.y;
-    int col = blockIdx.x * BLOCK_DIM + threadIdx.x;
+    uint32_t row = blockIdx.y * BLOCK_DIM + threadIdx.y;
+    uint32_t col = blockIdx.x * BLOCK_DIM + threadIdx.x;
 
     float sum = 0.0f;
 
     // Loop over sub-tiles along K dimension
-    int numTiles = CEIL_DIV(K, BLOCK_DIM);
-    for (int t = 0; t < numTiles; ++t) {
-        int tile_A_col = t * BLOCK_DIM + threadIdx.x;
-        int tile_B_row = t * BLOCK_DIM + threadIdx.y;
+    uint32_t numTiles = CEIL_DIV(K, BLOCK_DIM);
+    for (uint32_t t = 0; t < numTiles; ++t) {
+        uint32_t tile_A_col = t * BLOCK_DIM + threadIdx.x;
+        uint32_t tile_B_row = t * BLOCK_DIM + threadIdx.y;
 
         // Unified global coordinate boundary load into Shared Memory
-        As[threadIdx.y][threadIdx.x] = (row < M && tile_A_col < K) ? A[row * K + tile_A_col] : 0.0f;
-        Bs[threadIdx.y][threadIdx.x] = (tile_B_row < K && col < N) ? B[tile_B_row * N + col] : 0.0f;
+        As[threadIdx.y][threadIdx.x] = (row < static_cast<uint32_t>(M) && tile_A_col < static_cast<uint32_t>(K)) ? A[row * K + tile_A_col] : 0.0f;
+        Bs[threadIdx.y][threadIdx.x] = (tile_B_row < static_cast<uint32_t>(K) && col < static_cast<uint32_t>(N)) ? B[tile_B_row * N + col] : 0.0f;
 
         __syncthreads();
 
         // Accumulate products from shared memory
         #pragma unroll
-        for (int k = 0; k < BLOCK_DIM; ++k) {
+        for (uint32_t k = 0; k < BLOCK_DIM; ++k) {
             sum += As[threadIdx.y][k] * Bs[k][threadIdx.x];
         }
 
         __syncthreads();
     }
 
-    if (row < M && col < N) {
+    if (row < static_cast<uint32_t>(M) && col < static_cast<uint32_t>(N)) {
         C[row * N + col] = alpha * sum + beta * C[row * N + col];
     }
 }
