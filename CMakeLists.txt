@@ -24,15 +24,16 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 # Find CUDA packages
 find_package(CUDAToolkit REQUIRED)
 
-# Source files
-file(GLOB SRCS "src/*.cu" "src/kernels/*.cu")
+# Kernel and Utility source files
+file(GLOB KERNEL_SRCS "src/kernels/*.cu")
+set(COMMON_SRCS src/utils.cu ${KERNEL_SRCS})
 
-# Executable target
-add_executable(sgemm_bench ${SRCS})
-
-# Link libraries
+# Benchmark executable target
+add_executable(sgemm_bench src/main.cu ${COMMON_SRCS})
 target_link_libraries(sgemm_bench PRIVATE CUDA::cublas CUDA::cudart)
+set_target_properties(sgemm_bench PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
-set_target_properties(sgemm_bench PROPERTIES
-    CUDA_SEPARABLE_COMPILATION ON
-)
+# Auto-tuner executable target
+add_executable(sgemm_tuner src/tuner.cu src/utils.cu)
+target_link_libraries(sgemm_tuner PRIVATE CUDA::cublas CUDA::cudart)
+set_target_properties(sgemm_tuner PROPERTIES CUDA_SEPARABLE_COMPILATION ON)

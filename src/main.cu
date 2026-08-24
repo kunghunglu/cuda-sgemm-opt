@@ -72,7 +72,7 @@ int main(int argc, char** argv) {
                       << "  -k <int>          Matrix depth K (default 2048)\n"
                       << "  -w <int>          Warmup iterations (default 5)\n"
                       << "  -r <int>          Benchmark iterations (default 20)\n"
-                      << "  --kernel <id(s)>  Target kernel index or comma-separated indices (0-7, 10=cuBLAS, default all)\n"
+                      << "  --kernel <id(s)>  Target kernel index or comma-separated indices (0-9, 10=cuBLAS, default all)\n"
                       << "  --skip-verify     Skip numerical verification against reference\n";
             return 0;
         }
@@ -112,11 +112,32 @@ int main(int argc, char** argv) {
     CUDA_CHECK(cudaMemcpy(d_A, h_A, bytes_A, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_B, h_B, bytes_B, cudaMemcpyHostToDevice));
 
-    // Compute Reference using cuBLAS
+    cudaEvent_t start, stop;
+    CUDA_CHECK(cudaEventCreate(&start));
+    CUDA_CHECK(cudaEventCreate(&stop));
+
+    // Compute Reference and Baseline Time using cuBLAS
     cublasHandle_t handle;
     CUBLAS_CHECK(cublasCreate(&handle));
     float alpha = 1.0f, beta = 0.0f;
-    run_sgemm_cublas(handle, M, N, K, alpha, d_A, d_B, beta, d_C);
+
+    // Warmup cuBLAS
+    for (int i = 0; i < warmup_iters; ++i) {
+        run_sgemm_cublas(handle, M, N, K, alpha, d_A, d_B, beta, d_C);
+    }
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    // Measure cuBLAS
+    CUDA_CHECK(cudaEventRecord(start));
+    for (int i = 0; i < bench_iters; ++i) {
+        run_sgemm_cublas(handle, M, N, K, alpha, d_A, d_B, beta, d_C);
+    }
+    CUDA_CHECK(cudaEventRecord(stop));
+    CUDA_CHECK(cudaEventSynchronize(stop));
+    float cublas_time_ms = 0.0f;
+    CUDA_CHECK(cudaEventElapsedTime(&cublas_time_ms, start, stop));
+    cublas_time_ms /= bench_iters;
+    double cublas_gflops = (2.0 * M * N * K) / (cublas_time_ms * 1e-3) / 1e9;
     CUDA_CHECK(cudaMemcpy(h_C_ref, d_C, bytes_C, cudaMemcpyDeviceToHost));
 
     // Register all kernels
@@ -130,21 +151,18 @@ int main(int argc, char** argv) {
         {6, "Kernel 6: SMEM Double Buffering", run_sgemm_06_smem_double_buffering},
         {7, "Kernel 7: Bank Conflict Free", run_sgemm_07_bank_conflict_free},
         {8, "Kernel 8: Hierarchical Warp Tiling", run_sgemm_08_warp_tiling},
-       // {9, "Kernel 9: Tensor Cores (WMMA)", run_sgemm_09_tensor_core_wmma},
+        {9, "Kernel 9: Templated Warp Tiling", run_sgemm_09_templated_warp_tiling},
         {10, "Reference: cuBLAS", run_sgemm_cublas_wrapper}
     };
 
     // Print table header
     std::cout << std::left << std::setw(38) << "Kernel Name"
-              << std::setw(15) << "Status"
+              << std::setw(12) << "Status"
               << std::setw(16) << "Max Abs Error"
-              << std::setw(15) << "Time (ms)"
-              << std::setw(15) << "GFLOPS" << "\n";
-    std::cout << std::string(99, '-') << "\n";
-
-    cudaEvent_t start, stop;
-    CUDA_CHECK(cudaEventCreate(&start));
-    CUDA_CHECK(cudaEventCreate(&stop));
+              << std::setw(13) << "Time (ms)"
+              << std::setw(13) << "GFLOPS"
+              << std::setw(16) << "vs cuBLAS (%)" << "\n";
+    std::cout << std::string(108, '-') << "\n";
 
     for (const auto& k : kernels) {
         if (!target_kernels.empty() && target_kernels.find(k.id) == target_kernels.end()) {
@@ -173,20 +191,26 @@ int main(int argc, char** argv) {
         float avg_time_ms = total_time_ms / bench_iters;
 
         double gflops = (2.0 * M * N * K) / (avg_time_ms * 1e-3) / 1e9;
+        double pct_cublas = (cublas_gflops > 0.0) ? (gflops / cublas_gflops * 100.0) : 0.0;
+        if (k.id == 10) pct_cublas = 100.0;
 
         // Copy back result and verify
         CUDA_CHECK(cudaMemcpy(h_C_test, d_C, bytes_C, cudaMemcpyDeviceToHost));
         float max_err = calc_max_abs_error(h_C_ref, h_C_test, M, N);
-        bool passed = skip_verify || (max_err < 1.0f); // WMMA FP16 precision threshold ~1e-1 to 1.0 depending on matrix magnitude
+        bool passed = skip_verify || (max_err < 1.0f);
+
+        std::stringstream ss_pct;
+        ss_pct << std::fixed << std::setprecision(1) << pct_cublas << "%";
 
         std::cout << std::left << std::setw(38) << k.name
-                  << std::setw(15) << (passed ? "PASSED" : "FAILED")
+                  << std::setw(12) << (passed ? "PASSED" : "FAILED")
                   << std::scientific << std::setprecision(3) << std::setw(16) << max_err
-                  << std::fixed << std::setprecision(3) << std::setw(15) << avg_time_ms
-                  << std::fixed << std::setprecision(2) << std::setw(15) << gflops << "\n";
+                  << std::fixed << std::setprecision(3) << std::setw(13) << avg_time_ms
+                  << std::fixed << std::setprecision(2) << std::setw(13) << gflops
+                  << std::setw(16) << ss_pct.str() << "\n";
     }
 
-    std::cout << std::string(99, '-') << "\n\n";
+    std::cout << std::string(108, '-') << "\n\n";
 
     // Clean up
     CUDA_CHECK(cudaEventDestroy(start));

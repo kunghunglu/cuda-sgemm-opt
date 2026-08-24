@@ -36,8 +36,8 @@ void run_sgemm_07_bank_conflict_free(int M, int N, int K, float alpha, const flo
 // Step 8: Hierarchical Warp Tiling (Block -> Warp -> Thread)
 void run_sgemm_08_warp_tiling(int M, int N, int K, float alpha, const float* d_A, const float* d_B, float beta, float* d_C);
 
-// Step 9: Tensor Cores via CUDA WMMA (Half/Float mixed precision or FP32 WMMA)
-void run_sgemm_09_tensor_core_wmma(int M, int N, int K, float alpha, const float* d_A, const float* d_B, float beta, float* d_C);
+// Step 9: Templated Hierarchical Warp Tiling & Architecture Tuning
+void run_sgemm_09_templated_warp_tiling(int M, int N, int K, float alpha, const float* d_A, const float* d_B, float beta, float* d_C);
 
 // Benchmark Reference: NVIDIA cuBLAS
 void run_sgemm_cublas(cublasHandle_t handle, int M, int N, int K, float alpha, const float* d_A, const float* d_B, float beta, float* d_C);
