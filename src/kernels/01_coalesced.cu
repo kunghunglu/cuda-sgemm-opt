@@ -23,21 +23,25 @@ __global__ void sgemm_01_coalesced_kernel(int M, int N, int K, float alpha,
                                           const float* __restrict__ B,
                                           float beta,
                                           float* __restrict__ C) {
+    const uint32_t uM = static_cast<uint32_t>(M);
+    const uint32_t uN = static_cast<uint32_t>(N);
+    const uint32_t uK = static_cast<uint32_t>(K);
+
     // threadIdx.x maps to contiguous columns (N)
     // threadIdx.y maps to rows (M)
     uint32_t col = blockIdx.x * blockDim.x + threadIdx.x;
     uint32_t row = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (row >= static_cast<uint32_t>(M) || col >= static_cast<uint32_t>(N)) {
+    if (row >= uM || col >= uN) {
         return;
     }
 
     float sum = 0.0f; 
-    for (int i = 0; i < K; ++i) {
-        sum += A[row * K + i] * B[i * N + col];
+    for (uint32_t i = 0; i < uK; ++i) {
+        sum += A[row * uK + i] * B[i * uN + col];
     }
     
-    C[row * N + col] = alpha * sum + beta * C[row * N + col];
+    C[row * uN + col] = alpha * sum + beta * C[row * uN + col];
 }
 
 void run_sgemm_01_coalesced(int M, int N, int K, float alpha, const float* d_A, const float* d_B, float beta, float* d_C) {

@@ -40,6 +40,9 @@ __global__ void sgemm_05_vectorized_kernel(int M, int N, int K, float alpha,
                                            const float* __restrict__ B,
                                            float beta,
                                            float* __restrict__ C) {
+    const uint32_t uN = static_cast<uint32_t>(N);
+    const uint32_t uK = static_cast<uint32_t>(K);
+
     uint32_t blockRow = blockIdx.y;
     uint32_t blockCol = blockIdx.x;
 
@@ -65,20 +68,20 @@ __global__ void sgemm_05_vectorized_kernel(int M, int N, int K, float alpha,
     uint32_t loadB_row1 = loadB_row0 + ROWS_PER_LOAD_B;
     uint32_t loadB_col  = (tid % THREADS_N_B) * VEC_SIZE;
 
-    for (int bk = 0; bk < K; bk += BK) {
+    for (uint32_t bk = 0; bk < uK; bk += BK) {
         // Vectorized load float4 from A
         uint32_t gRowA0 = blockRow * BM + loadA_row0;
         uint32_t gRowA1 = blockRow * BM + loadA_row1;
-        int gColA = bk + loadA_col;
-        *reinterpret_cast<float4*>(&As[loadA_row0][loadA_col]) = *reinterpret_cast<const float4*>(&A[gRowA0 * K + gColA]);
-        *reinterpret_cast<float4*>(&As[loadA_row1][loadA_col]) = *reinterpret_cast<const float4*>(&A[gRowA1 * K + gColA]);
+        uint32_t gColA = bk + loadA_col;
+        *reinterpret_cast<float4*>(&As[loadA_row0][loadA_col]) = *reinterpret_cast<const float4*>(&A[gRowA0 * uK + gColA]);
+        *reinterpret_cast<float4*>(&As[loadA_row1][loadA_col]) = *reinterpret_cast<const float4*>(&A[gRowA1 * uK + gColA]);
 
         // Vectorized load float4 from B
-        int gRowB0 = bk + loadB_row0;
-        int gRowB1 = bk + loadB_row1;
+        uint32_t gRowB0 = bk + loadB_row0;
+        uint32_t gRowB1 = bk + loadB_row1;
         uint32_t gColB = blockCol * BN + loadB_col;
-        *reinterpret_cast<float4*>(&Bs[loadB_row0][loadB_col]) = *reinterpret_cast<const float4*>(&B[gRowB0 * N + gColB]);
-        *reinterpret_cast<float4*>(&Bs[loadB_row1][loadB_col]) = *reinterpret_cast<const float4*>(&B[gRowB1 * N + gColB]);
+        *reinterpret_cast<float4*>(&Bs[loadB_row0][loadB_col]) = *reinterpret_cast<const float4*>(&B[gRowB0 * uN + gColB]);
+        *reinterpret_cast<float4*>(&Bs[loadB_row1][loadB_col]) = *reinterpret_cast<const float4*>(&B[gRowB1 * uN + gColB]);
 
         __syncthreads();
 
@@ -112,9 +115,9 @@ __global__ void sgemm_05_vectorized_kernel(int M, int N, int K, float alpha,
         #pragma unroll
         for (uint32_t n = 0; n < TN; n += 4) {
             uint32_t c = blockCol * BN + threadCol * TN + n;
-            float4 oldC = *reinterpret_cast<const float4*>(&C[r * N + c]);
+            float4 oldC = *reinterpret_cast<const float4*>(&C[r * uN + c]);
             float4 c_reg = *reinterpret_cast<const float4*>(&regC[m][n]);
-            *reinterpret_cast<float4*>(&C[r * N + c]) = alpha * c_reg + beta * oldC;
+            *reinterpret_cast<float4*>(&C[r * uN + c]) = alpha * c_reg + beta * oldC;
         }
     }
 }

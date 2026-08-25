@@ -34,6 +34,10 @@ __global__ void sgemm_03_1d_block_tiling_kernel(int M, int N, int K, float alpha
                                                 const float* __restrict__ B,
                                                 float beta,
                                                 float* __restrict__ C) {
+    const uint32_t uM = static_cast<uint32_t>(M);
+    const uint32_t uN = static_cast<uint32_t>(N);
+    const uint32_t uK = static_cast<uint32_t>(K);
+
     uint32_t blockRow = blockIdx.y;
     uint32_t blockCol = blockIdx.x;
 
@@ -62,24 +66,16 @@ __global__ void sgemm_03_1d_block_tiling_kernel(int M, int N, int K, float alpha
     uint32_t loadB_row = tid / BN;
     uint32_t loadB_col = tid % BN;
 
-    for (int bk = 0; bk < K; bk += BK) {
+    for (uint32_t bk = 0; bk < uK; bk += BK) {
         // Load As tile
         uint32_t gRowA = blockRow * BM + loadA_row;
-        int gColA = bk + loadA_col;
-        if (gRowA < static_cast<uint32_t>(M) && gColA < K) {
-            As[loadA_row][loadA_col] = A[gRowA * K + gColA];
-        } else {
-            As[loadA_row][loadA_col] = 0.0f;
-        }
+        uint32_t gColA = bk + loadA_col;
+        As[loadA_row][loadA_col] = (gRowA < uM && gColA < uK) ? A[gRowA * uK + gColA] : 0.0f;
 
         // Load Bs tile
-        int gRowB = bk + loadB_row;
+        uint32_t gRowB = bk + loadB_row;
         uint32_t gColB = blockCol * BN + loadB_col;
-        if (gRowB < K && gColB < static_cast<uint32_t>(N)) {
-            Bs[loadB_row][loadB_col] = B[gRowB * N + gColB];
-        } else {
-            Bs[loadB_row][loadB_col] = 0.0f;
-        }
+        Bs[loadB_row][loadB_col] = (gRowB < uK && gColB < uN) ? B[gRowB * uN + gColB] : 0.0f;
 
         __syncthreads();
 
@@ -100,8 +96,8 @@ __global__ void sgemm_03_1d_block_tiling_kernel(int M, int N, int K, float alpha
     #pragma unroll
     for (uint32_t m = 0; m < TM; ++m) {
         uint32_t r = row_start + m;
-        if (r < static_cast<uint32_t>(M) && col < static_cast<uint32_t>(N)) {
-            C[r * N + col] = alpha * regC[m] + beta * C[r * N + col];
+        if (r < uM && col < uN) {
+            C[r * uN + col] = alpha * regC[m] + beta * C[r * uN + col];
         }
     }
 }

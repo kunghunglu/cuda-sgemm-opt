@@ -46,6 +46,9 @@ __global__ void sgemm_07_bank_conflict_free_kernel(int M, int N, int K, float al
                                                    const float* __restrict__ B,
                                                    float beta,
                                                    float* __restrict__ C) {
+    const uint32_t uN = static_cast<uint32_t>(N);
+    const uint32_t uK = static_cast<uint32_t>(K);
+
     uint32_t blockRow = blockIdx.y;
     uint32_t blockCol = blockIdx.x;
 
@@ -80,20 +83,20 @@ __global__ void sgemm_07_bank_conflict_free_kernel(int M, int N, int K, float al
     uint32_t loadB_col  = (tid % THREADS_N_B) * VEC_SIZE; // 0, 4, 8, ..., 124
 
     // Helper lambdas for fetching from global memory
-    auto fetch_A = [&](int bk, float4 val[2]) {
+    auto fetch_A = [&](uint32_t bk, float4 val[2]) {
         uint32_t gRowA0 = blockRow * BM + loadA_row0;
         uint32_t gRowA1 = blockRow * BM + loadA_row1;
-        int gColA = bk + loadA_col;
-        val[0] = *reinterpret_cast<const float4*>(&A[gRowA0 * K + gColA]);
-        val[1] = *reinterpret_cast<const float4*>(&A[gRowA1 * K + gColA]);
+        uint32_t gColA = bk + loadA_col;
+        val[0] = *reinterpret_cast<const float4*>(&A[gRowA0 * uK + gColA]);
+        val[1] = *reinterpret_cast<const float4*>(&A[gRowA1 * uK + gColA]);
     };
 
-    auto fetch_B = [&](int bk, float4 val[2]) {
-        int gRowB0 = bk + loadB_row0;
-        int gRowB1 = bk + loadB_row1;
+    auto fetch_B = [&](uint32_t bk, float4 val[2]) {
+        uint32_t gRowB0 = bk + loadB_row0;
+        uint32_t gRowB1 = bk + loadB_row1;
         uint32_t gColB = blockCol * BN + loadB_col;
-        val[0] = *reinterpret_cast<const float4*>(&B[gRowB0 * N + gColB]);
-        val[1] = *reinterpret_cast<const float4*>(&B[gRowB1 * N + gColB]);
+        val[0] = *reinterpret_cast<const float4*>(&B[gRowB0 * uN + gColB]);
+        val[1] = *reinterpret_cast<const float4*>(&B[gRowB1 * uN + gColB]);
     };
 
     // Helper lambda to store prefetched A & B into Shared Memory buffer write_idx
@@ -125,7 +128,7 @@ __global__ void sgemm_07_bank_conflict_free_kernel(int M, int N, int K, float al
     int read_idx = 0;
 
     // Main Pipelined Loop
-    for (int bk = BK; bk < K; bk += BK) {
+    for (uint32_t bk = BK; bk < uK; bk += BK) {
         // Level 1 Prefetch: Global Memory -> Registers
         fetch_A(bk, prefetchA);
         fetch_B(bk, prefetchB);
@@ -187,9 +190,9 @@ __global__ void sgemm_07_bank_conflict_free_kernel(int M, int N, int K, float al
         #pragma unroll
         for (uint32_t n = 0; n < TN; n += 4) {
             uint32_t c = blockCol * BN + threadCol * TN + n;
-            float4 oldC = *reinterpret_cast<const float4*>(&C[r * N + c]);
+            float4 oldC = *reinterpret_cast<const float4*>(&C[r * uN + c]);
             float4 c_reg = *reinterpret_cast<const float4*>(&regC[m][n]);
-            *reinterpret_cast<float4*>(&C[r * N + c]) = alpha * c_reg + beta * oldC;
+            *reinterpret_cast<float4*>(&C[r * uN + c]) = alpha * c_reg + beta * oldC;
         }
     }
 }

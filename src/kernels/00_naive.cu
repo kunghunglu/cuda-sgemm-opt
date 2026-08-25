@@ -23,22 +23,26 @@ __global__ void sgemm_00_naive_kernel(int M, int N, int K, float alpha,
                                       const float* __restrict__ B,
                                       float beta,
                                       float* __restrict__ C) {
+    const uint32_t uM = static_cast<uint32_t>(M);
+    const uint32_t uN = static_cast<uint32_t>(N);
+    const uint32_t uK = static_cast<uint32_t>(K);
+
     // NON-COALESCED: threadIdx.x maps to rows, threadIdx.y maps to columns.
     // Consecutive threads in a warp (varying threadIdx.x) access different rows of B and C,
     // causing strided memory accesses that cannot be merged into 128-byte transactions.
     uint32_t row = blockIdx.x * blockDim.x + threadIdx.x;
     uint32_t col = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (row >= static_cast<uint32_t>(M) || col >= static_cast<uint32_t>(N)) {
+    if (row >= uM || col >= uN) {
         return;
     }
 
     float sum = 0.0f;
-    for (int i = 0; i < K; ++i) {
-        sum += A[row * K + i] * B[i * N + col];
+    for (uint32_t i = 0; i < uK; ++i) {
+        sum += A[row * uK + i] * B[i * uN + col];
     }
     
-    C[row * N + col] = alpha * sum + beta * C[row * N + col];
+    C[row * uN + col] = alpha * sum + beta * C[row * uN + col];
 }
 
 void run_sgemm_00_naive(int M, int N, int K, float alpha, const float* d_A, const float* d_B, float beta, float* d_C) {

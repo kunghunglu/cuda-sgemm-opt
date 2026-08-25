@@ -24,15 +24,10 @@ namespace {
     constexpr uint32_t THREADS_Y = BM / TM; // 16
     constexpr uint32_t TOTAL_THREADS = THREADS_X * THREADS_Y; // 256
 
-    constexpr uint32_t THREADS_K_A = BK / VEC_SIZE; // 16 / 4 = 4
-    constexpr uint32_t ROWS_PER_LOAD_A = TOTAL_THREADS / THREADS_K_A; // 64
-
-    constexpr uint32_t THREADS_N_B = BN / VEC_SIZE; // 128 / 4 = 32
-    constexpr uint32_t ROWS_PER_LOAD_B = TOTAL_THREADS / THREADS_N_B; // 8
-
     static_assert(BM % TM == 0, "BM must be divisible by TM");
     static_assert(BN % TN == 0, "BN must be divisible by TN");
-    static_assert(BK % VEC_SIZE == 0, "BK must be divisible by VEC_SIZE");
+    static_assert((BM * BK) % TOTAL_THREADS == 0, "As elements must be divisible by TOTAL_THREADS");
+    static_assert((BK * BN) % TOTAL_THREADS == 0, "Bs elements must be divisible by TOTAL_THREADS");
 }
 
 __global__ void sgemm_04_2d_block_tiling_kernel(int M, int N, int K, float alpha,
@@ -40,6 +35,10 @@ __global__ void sgemm_04_2d_block_tiling_kernel(int M, int N, int K, float alpha
                                                 const float* __restrict__ B,
                                                 float beta,
                                                 float* __restrict__ C) {
+    const uint32_t uM = static_cast<uint32_t>(M);
+    const uint32_t uN = static_cast<uint32_t>(N);
+    const uint32_t uK = static_cast<uint32_t>(K);
+
     uint32_t blockRow = blockIdx.y;
     uint32_t blockCol = blockIdx.x;
 
@@ -56,37 +55,27 @@ __global__ void sgemm_04_2d_block_tiling_kernel(int M, int N, int K, float alpha
 
     uint32_t tid = threadIdx.y * blockDim.x + threadIdx.x; // 0..255 threads
 
-    // Threads collaboratively load As (128x16 = 2048 floats -> 8 floats per thread)
-    uint32_t loadA_row0 = tid / THREADS_K_A;
-    uint32_t loadA_row1 = loadA_row0 + ROWS_PER_LOAD_A;
-    uint32_t loadA_col_start = (tid % THREADS_K_A) * VEC_SIZE;
-
-    // Threads collaboratively load Bs (16x128 = 2048 floats -> 8 floats per thread)
-    uint32_t loadB_row0 = tid / THREADS_N_B;
-    uint32_t loadB_row1 = loadB_row0 + ROWS_PER_LOAD_B;
-    uint32_t loadB_col_start = (tid % THREADS_N_B) * VEC_SIZE;
-
-    for (int bk = 0; bk < K; bk += BK) {
-        // Load tile from A into shared memory (2 chunks of 4 floats)
+    for (uint32_t bk = 0; bk < uK; bk += BK) {
+        // Load tile from A into shared memory with contiguous scalar coalescing
         #pragma unroll
-        for (uint32_t i = 0; i < VEC_SIZE; ++i) {
-            uint32_t cur_loadA_col = loadA_col_start + i;
-            uint32_t gRowA0 = blockRow * BM + loadA_row0;
-            uint32_t gRowA1 = blockRow * BM + loadA_row1;
-            int gColA = bk + cur_loadA_col;
-            As[loadA_row0][cur_loadA_col] = (gRowA0 < static_cast<uint32_t>(M) && gColA < K) ? A[gRowA0 * K + gColA] : 0.0f;
-            As[loadA_row1][cur_loadA_col] = (gRowA1 < static_cast<uint32_t>(M) && gColA < K) ? A[gRowA1 * K + gColA] : 0.0f;
+        for (uint32_t offset = 0; offset < BM * BK; offset += TOTAL_THREADS) {
+            uint32_t idx = tid + offset;
+            uint32_t rowA = idx / BK;
+            uint32_t colA = idx % BK;
+            uint32_t gRowA = blockRow * BM + rowA;
+            uint32_t gColA = bk + colA;
+            As[rowA][colA] = (gRowA < uM && gColA < uK) ? A[gRowA * uK + gColA] : 0.0f;
         }
 
-        // Load tile from B into shared memory (2 chunks of 4 floats)
+        // Load tile from B into shared memory with contiguous scalar coalescing
         #pragma unroll
-        for (uint32_t i = 0; i < VEC_SIZE; ++i) {
-            uint32_t cur_loadB_col = loadB_col_start + i;
-            int gRowB0 = bk + loadB_row0;
-            int gRowB1 = bk + loadB_row1;
-            uint32_t gColB = blockCol * BN + cur_loadB_col;
-            Bs[loadB_row0][cur_loadB_col] = (gRowB0 < K && gColB < static_cast<uint32_t>(N)) ? B[gRowB0 * N + gColB] : 0.0f;
-            Bs[loadB_row1][cur_loadB_col] = (gRowB1 < K && gColB < static_cast<uint32_t>(N)) ? B[gRowB1 * N + gColB] : 0.0f;
+        for (uint32_t offset = 0; offset < BK * BN; offset += TOTAL_THREADS) {
+            uint32_t idx = tid + offset;
+            uint32_t rowB = idx / BN;
+            uint32_t colB = idx % BN;
+            uint32_t gRowB = bk + rowB;
+            uint32_t gColB = blockCol * BN + colB;
+            Bs[rowB][colB] = (gRowB < uK && gColB < uN) ? B[gRowB * uN + gColB] : 0.0f;
         }
 
         __syncthreads();
@@ -124,8 +113,8 @@ __global__ void sgemm_04_2d_block_tiling_kernel(int M, int N, int K, float alpha
         #pragma unroll
         for (uint32_t n = 0; n < TN; ++n) {
             uint32_t c = blockCol * BN + threadCol * TN + n;
-            if (r < static_cast<uint32_t>(M) && c < static_cast<uint32_t>(N)) {
-                C[r * N + c] = alpha * regC[m][n] + beta * C[r * N + c];
+            if (r < uM && c < uN) {
+                C[r * uN + c] = alpha * regC[m][n] + beta * C[r * uN + c];
             }
         }
     }

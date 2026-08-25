@@ -31,6 +31,9 @@ __global__ void sgemm_templated_warp_tiling_kernel(
     float beta,
     float* __restrict__ C
 ) {
+    const uint32_t uN = static_cast<uint32_t>(N);
+    const uint32_t uK = static_cast<uint32_t>(K);
+
     constexpr uint32_t WM = BM / WARPS_M;
     constexpr uint32_t WN = BN / WARPS_N;
     constexpr uint32_t THREADS_PER_WARP_M = WM / TM;
@@ -102,21 +105,21 @@ __global__ void sgemm_templated_warp_tiling_kernel(
     uint32_t loadB_row0 = tid / THREADS_N_B;
     uint32_t loadB_col  = (tid % THREADS_N_B) * VEC_SIZE;
 
-    auto fetch_A = [&](int bk, float4 val[LOADS_A]) {
+    auto fetch_A = [&](uint32_t bk, float4 val[LOADS_A]) {
         #pragma unroll
         for (uint32_t i = 0; i < LOADS_A; ++i) {
             uint32_t gRowA = blockRow * BM + loadA_row0 + i * ROWS_PER_LOAD_A;
-            int gColA = bk + loadA_col;
-            val[i] = *reinterpret_cast<const float4*>(&A[gRowA * K + gColA]);
+            uint32_t gColA = bk + loadA_col;
+            val[i] = *reinterpret_cast<const float4*>(&A[gRowA * uK + gColA]);
         }
     };
 
-    auto fetch_B = [&](int bk, float4 val[LOADS_B]) {
+    auto fetch_B = [&](uint32_t bk, float4 val[LOADS_B]) {
         #pragma unroll
         for (uint32_t i = 0; i < LOADS_B; ++i) {
-            int gRowB = bk + loadB_row0 + i * ROWS_PER_LOAD_B;
+            uint32_t gRowB = bk + loadB_row0 + i * ROWS_PER_LOAD_B;
             uint32_t gColB = blockCol * BN + loadB_col;
-            val[i] = *reinterpret_cast<const float4*>(&B[gRowB * N + gColB]);
+            val[i] = *reinterpret_cast<const float4*>(&B[gRowB * uN + gColB]);
         }
     };
 
@@ -148,7 +151,7 @@ __global__ void sgemm_templated_warp_tiling_kernel(
     int read_idx = 0;
 
     // Main K-loop (Double-buffered Software Pipelining)
-    for (int bk = BK; bk < K; bk += BK) {
+    for (uint32_t bk = BK; bk < uK; bk += BK) {
         // Asynchronously prefetch next tile from Global Memory
         fetch_A(bk, prefetchA);
         fetch_B(bk, prefetchB);
@@ -215,9 +218,9 @@ __global__ void sgemm_templated_warp_tiling_kernel(
         #pragma unroll
         for (uint32_t n = 0; n < TN; n += VEC_SIZE) {
             uint32_t c = blockCol * BN + thread_n_offset + n;
-            float4 oldC = *reinterpret_cast<const float4*>(&C[r * N + c]);
+            float4 oldC = *reinterpret_cast<const float4*>(&C[r * uN + c]);
             float4 c_reg = *reinterpret_cast<const float4*>(&regC[m][n]);
-            *reinterpret_cast<float4*>(&C[r * N + c]) = alpha * c_reg + beta * oldC;
+            *reinterpret_cast<float4*>(&C[r * uN + c]) = alpha * c_reg + beta * oldC;
         }
     }
 }
