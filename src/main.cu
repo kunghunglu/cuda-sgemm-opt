@@ -14,14 +14,6 @@ struct KernelInfo {
     void (*func)(int, int, int, float, const float*, const float*, float, float*);
 };
 
-void run_sgemm_cublas_wrapper(int M, int N, int K, float alpha, const float* d_A, const float* d_B, float beta, float* d_C) {
-    static cublasHandle_t handle = nullptr;
-    if (!handle) {
-        CUBLAS_CHECK(cublasCreate(&handle));
-    }
-    run_sgemm_cublas(handle, M, N, K, alpha, d_A, d_B, beta, d_C);
-}
-
 void run_sgemm_cublas(cublasHandle_t handle, int M, int N, int K, float alpha, const float* d_A, const float* d_B, float beta, float* d_C) {
     // cuBLAS uses Column-Major order by default.
     // Row-Major C = A * B is equivalent to Column-Major C^T = B^T * A^T.
@@ -72,7 +64,7 @@ int main(int argc, char** argv) {
                       << "  -k <int>          Matrix depth K (default 2048)\n"
                       << "  -w <int>          Warmup iterations (default 5)\n"
                       << "  -r <int>          Benchmark iterations (default 20)\n"
-                      << "  --kernel <id(s)>  Target kernel index or comma-separated indices (0-9, 10=cuBLAS, default all)\n"
+                      << "  --kernel <id(s)>  Target kernel index or comma-separated indices (0-9, default all)\n"
                       << "  --skip-verify     Skip numerical verification against reference\n";
             return 0;
         }
@@ -151,8 +143,7 @@ int main(int argc, char** argv) {
         {6, "Kernel 6: SMEM Double Buffering", run_sgemm_06_smem_double_buffering},
         {7, "Kernel 7: Bank Conflict Free", run_sgemm_07_bank_conflict_free},
         {8, "Kernel 8: Hierarchical Warp Tiling", run_sgemm_08_warp_tiling},
-        {9, "Kernel 9: Templated Warp Tiling", run_sgemm_09_templated_warp_tiling},
-        {10, "Reference: cuBLAS", run_sgemm_cublas_wrapper}
+        {9, "Kernel 9: Templated Warp Tiling", run_sgemm_09_templated_warp_tiling}
     };
 
     // Print table header
@@ -192,7 +183,6 @@ int main(int argc, char** argv) {
 
         double gflops = (2.0 * M * N * K) / (avg_time_ms * 1e-3) / 1e9;
         double pct_cublas = (cublas_gflops > 0.0) ? (gflops / cublas_gflops * 100.0) : 0.0;
-        if (k.id == 10) pct_cublas = 100.0;
 
         // Copy back result and verify
         CUDA_CHECK(cudaMemcpy(h_C_test, d_C, bytes_C, cudaMemcpyDeviceToHost));
@@ -209,6 +199,14 @@ int main(int argc, char** argv) {
                   << std::fixed << std::setprecision(2) << std::setw(13) << gflops
                   << std::setw(16) << ss_pct.str() << "\n";
     }
+
+    // Always print cuBLAS reference baseline
+    std::cout << std::left << std::setw(38) << "Reference: cuBLAS"
+              << std::setw(12) << "PASSED"
+              << std::scientific << std::setprecision(3) << std::setw(16) << 0.0f
+              << std::fixed << std::setprecision(3) << std::setw(13) << cublas_time_ms
+              << std::fixed << std::setprecision(2) << std::setw(13) << cublas_gflops
+              << std::setw(16) << "100.0%" << "\n";
 
     std::cout << std::string(108, '-') << "\n\n";
 

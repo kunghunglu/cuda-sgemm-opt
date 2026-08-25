@@ -20,17 +20,17 @@
 
 Kernel Name                           Time (ms)    GFLOPS       vs cuBLAS (%)   
 --------------------------------------------------------------------------------
-Kernel 0: Naive                       101.195      169.77       2.1%            
-Kernel 1: Global Memory Coalescing    30.343       566.19       6.9%            
-Kernel 2: Shared Memory Tiling        15.377       1117.26      13.7%           
-Kernel 3: 1D Thread Tiling            7.426        2313.57      28.3%           
-Kernel 4: 2D Thread Tiling            5.994        2866.09      35.1%           
-Kernel 5: Vectorized Access (float4)  3.874        4435.08      54.3%           
-Kernel 6: SMEM Double Buffering       3.512        4891.32      59.9%           
-Kernel 7: Bank Conflict Free          2.457        6992.40      85.6%           
-Kernel 8: Hierarchical Warp Tiling    2.255        7620.13      93.3%           
-Kernel 9: Templated Warp Tiling       2.075        8281.16      101.4%   <-- ⚡
-Reference: cuBLAS                     2.183        7870.16      100.0%          
+Kernel 0: Naive                       105.341      163.09       1.6%            
+Kernel 1: Global Memory Coalescing    31.454       546.19       5.3%            
+Kernel 2: Shared Memory Tiling        15.706       1093.83      10.7%           
+Kernel 3: 1D Thread Tiling            7.501        2290.47      22.4%           
+Kernel 4: 2D Thread Tiling            5.631        3050.79      29.9%           
+Kernel 5: Vectorized Access (float4)  3.997        4297.77      42.1%           
+Kernel 6: SMEM Double Buffering       3.708        4633.18      45.3%           
+Kernel 7: Bank Conflict Free          2.459        6986.14      68.4%           
+Kernel 8: Hierarchical Warp Tiling    2.570        6684.42      65.4%           
+Kernel 9: Templated Warp Tiling       1.825        9412.71      92.1%   <-- ⚡
+Reference: cuBLAS                     1.681        10219.78     100.0%          
 --------------------------------------------------------------------------------
 ```
 
@@ -49,7 +49,7 @@ Reference: cuBLAS                     2.183        7870.16      100.0%
 | **6** | **SMEM Double Buffering** | Ping-pong shared memory buffers (Software Pipelining) | Overlapped DRAM prefetching with ALU math |
 | **7** | **Bank Conflict Free Layout** | Transposed Matrix A in SMEM ($As[k][m]$) + Row Padding (`PAD_A=4`) | Enabled vectorized `LDS.128` & zero SMEM bank conflicts on A |
 | **8** | **Hierarchical Warp Tiling** | 3-tier mapping: Block ($128\times 128$) -> Warp ($32\times 64$) -> Thread ($8\times 8$) | Hardware multicasting & reduced Matrix B conflict |
-| **9** | **Templated Warp Tiling** | Generic C++ template, $2\times 4$ Warps ($WM=64, WN=32$) with 8-Way Broadcast | **108% cuBLAS Performance** |
+| **9** | **Templated Warp Tiling** | Generic C++ template, $2\times 4$ Warps ($WM=64, WN=32$) with 8-Way Broadcast | **92% cuBLAS Performance** |
 
 ---
 
